@@ -1,34 +1,44 @@
 const {io} = require('../server');
+const { Usuarios } = require('../classes/usuarios');
+const{crearMensaje} = require('../utils/utilidades');
+
+const usuarios = new Usuarios(); 
 
 io.on('connection',(client) =>{
-    console.log('Usuario conectado');
+    client.on('entrarChat', (data, callback) => {
 
-    client.emit('enviarMensaje', {
-        usuario: 'Administrador',
-        mensaje: 'Bienvenido a esta aplicacion'
+        if(!data.nombre || !data.sala){
+            return callback({
+                error: true,
+                mensaje: 'El nombre o sala son necesarios'
+            })
+        }
+
+        client.join(data.sala);
+
+       usuarios.agregarPersona(client.id, data.nombre, data.sala);
+       client.broadcast.to(data.sala).emit('listaPersonas', usuarios.getPersonasPorSala(data.sala));
+       callback(usuarios.getPersonasPorSala(data.sala));
     })
 
-    client.on('disconnect', () => {
-        console.log('Usuario desconectado');
+    client.on('crearMensaje', (data)=>{
+        let persona = usuarios.getPersona(client.id);
+        let mensaje = crearMensaje(persona.nombre, data.mensaje);
+        client.broadcast.to(persona.sala).emit('crearMensaje', mensaje);
+    })
+
+    client.on('disconnect', () =>{
+        let personaBorrada = usuarios.remobePersona(client.id);
+
+        client.broadcast.to(personaBorrada.sala).emit('crearMensaje',crearMensaje('Administrador', `${personaBorrada.nombre } salio`))
+        client.broadcast.to(personaBorrada.sala).emit('listaPersonas', usuarios.getPersonasPorSala(personaBorrada.sala));
+
     });
 
-    //Escuchar el cliente
-    client.on('enviarMensaje', (data, callback) =>{
-        console.log(data);
-        
-        //Broadcast funciona para elviar la inforamcion a todo usuario que este conectado en el servidor
-        client.broadcast.emit('enviarMensaje', data);
-
-        // if (mensaje.usuario) {
-        //     callback({
-        //         respuesta:'TODO SALIO BIEN '
-        //     })
-        // }else{
-        //     callback({
-        //         respuesta: 'TODO SALIO MAL!!!!'
-        //     })
-        // }  
-
+    //Mensajes Privados
+    client.on('mensajePrivado', data =>{
+        let persona = usuarios.getPersona(client.id);
+        client.broadcast.to(data.para).emit('mensajePrivado', crearMensaje(persona.nombre, data.mensaje));
     })
 });
 
